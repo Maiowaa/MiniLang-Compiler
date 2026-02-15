@@ -1,0 +1,16 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+
+# IDE
+.vscode/
+.idea/
+
+# Converter script (not needed in repo)
+md_to_pdf.py
+
+# Gemini artifacts
+.gemini/
