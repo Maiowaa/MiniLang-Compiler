@@ -14,6 +14,7 @@ from minilang.ast_nodes import (
     Assign, IfStmt, WhileStmt, ReadStmt, WriteStmt, ProcCall,
     BinOp, UnaryOp, Num, Str, Identifier, ArrayAccess, FuncCall,
 )
+from minilang.suggestions import SuggestionEngine
 
 
 # ── Symbol Table Entry ───────────────────────────────────────────────
@@ -42,13 +43,28 @@ class SemanticAnalyzer:
     def __init__(self) -> None:
         self.symbols: dict[str, Symbol] = {}
         self.errors: list[str] = []
+        self.suggestions: dict[int, list[str]] = {}
+        self._source_lines: list[str] = []
 
     def _error(self, line: int, msg: str) -> None:
-        self.errors.append(f"[line {line}] {msg}")
+        full_msg = f"[line {line}] {msg}"
+        self.errors.append(full_msg)
+        self._add_suggestion(full_msg, line)
+
+    def _add_suggestion(self, error_msg: str, line: int) -> None:
+        """Generate AI suggestions for a semantic error."""
+        engine = SuggestionEngine(
+            symbols=self.symbols,
+            source_lines=self._source_lines,
+        )
+        hints = engine.suggest_for_error(error_msg, line)
+        if hints:
+            self.suggestions.setdefault(line, []).extend(hints)
 
     # ── public entry ─────────────────────────────────────────────
 
-    def analyze(self, node: ASTNode) -> None:
+    def analyze(self, node: ASTNode, source: str = "") -> None:
+        self._source_lines = source.splitlines() if source else []
         self.visit(node)
 
     # ── visitor dispatch ─────────────────────────────────────────

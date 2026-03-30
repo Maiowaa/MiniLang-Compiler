@@ -12,6 +12,7 @@ Key design points
 """
 
 from minilang.tokens import Token, TokenType, RESERVED_WORDS
+from minilang.suggestions import SuggestionEngine
 
 
 class Lexer:
@@ -22,6 +23,7 @@ class Lexer:
         self.pos    = 0          # current index into source
         self.line   = 1          # current line number
         self.errors: list[str] = []
+        self.suggestions: dict[int, list[str]] = {}
 
     # ── helpers ──────────────────────────────────────────────────
 
@@ -99,6 +101,7 @@ class Lexer:
                 # unterminated string (hit newline)
                 msg = f"[line {line}] Unterminated string"
                 self.errors.append(msg)
+                self._add_suggestion(msg, line)
                 return Token(TokenType.ERROR, msg, line)
             if self._current() == "\\":
                 self._advance()             # consume backslash
@@ -118,6 +121,7 @@ class Lexer:
         if self.pos >= len(self.source):
             msg = f"[line {line}] Unterminated string (hit EOF)"
             self.errors.append(msg)
+            self._add_suggestion(msg, line)
             return Token(TokenType.ERROR, msg, line)
         self._advance()                     # consume closing '
         return Token(TokenType.STRLIT, "".join(chars), line)
@@ -164,7 +168,18 @@ class Lexer:
         # ── unrecognised character ──
         msg = f"[line {line}] Unexpected character: {ch!r}"
         self.errors.append(msg)
+        self._add_suggestion(msg, line)
         return Token(TokenType.ERROR, msg, line)
+
+    # ── AI suggestion hook ───────────────────────────────────────
+
+    def _add_suggestion(self, error_msg: str, line: int) -> None:
+        """Generate AI suggestions for a lexer error."""
+        source_lines = self.source.splitlines()
+        engine = SuggestionEngine(source_lines=source_lines)
+        hints = engine.suggest_for_error(error_msg, line)
+        if hints:
+            self.suggestions.setdefault(line, []).extend(hints)
 
     # ── main dispatch ────────────────────────────────────────────
 

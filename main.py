@@ -3,8 +3,11 @@
 MiniLang Compiler — CLI Entry Point
 ────────────────────────────────────
 Usage:  python3 main.py <source_file> [--phase lexer|parser|semantic|ir|codegen|compile]
+                                      [--no-suggestions]
+                                      [--advisor-only]
 
 Default phase is 'compile' (full listing output).
+AI suggestions are enabled by default. Use --no-suggestions to suppress.
 """
 
 import sys
@@ -17,7 +20,16 @@ from minilang.codegen import CodeGenerator, print_asm
 from minilang.listing import compile_listing
 
 
-def run_lexer(source: str) -> None:
+def _print_suggestions(suggestions: dict[int, list[str]]) -> None:
+    """Print AI suggestions grouped by line number."""
+    if not suggestions:
+        return
+    for line in sorted(suggestions):
+        for hint in suggestions[line]:
+            print(f"  💡 FIX [line {line}]: {hint}")
+
+
+def run_lexer(source: str, show_suggestions: bool = True) -> None:
     """Tokenize and print the token table."""
     lexer  = Lexer(source)
     tokens = lexer.tokenize()
@@ -31,11 +43,14 @@ def run_lexer(source: str) -> None:
         print(f"\n── {len(lexer.errors)} lexical error(s) ──")
         for err in lexer.errors:
             print(f"  {err}")
+        if show_suggestions and lexer.suggestions:
+            print(f"\n═══ AI Suggestions ═══")
+            _print_suggestions(lexer.suggestions)
     else:
         print("\nNo lexical errors.")
 
 
-def run_parser(source: str):
+def run_parser(source: str, show_suggestions: bool = True):
     """Tokenize → Parse → print AST. Returns (ast, has_errors)."""
     # ── lexing ──
     lexer  = Lexer(source)
@@ -45,6 +60,9 @@ def run_parser(source: str):
         print(f"── {len(lexer.errors)} lexical error(s) ──")
         for err in lexer.errors:
             print(f"  {err}")
+        if show_suggestions and lexer.suggestions:
+            print(f"\n═══ AI Suggestions ═══")
+            _print_suggestions(lexer.suggestions)
         print()
 
     # ── parsing ──
@@ -58,14 +76,17 @@ def run_parser(source: str):
         print(f"\n── {len(parser.errors)} parse error(s) ──")
         for err in parser.errors:
             print(f"  {err}")
+        if show_suggestions and parser.suggestions:
+            print(f"\n═══ AI Suggestions ═══")
+            _print_suggestions(parser.suggestions)
 
     has_errors = bool(lexer.errors or parser.errors)
     return ast, has_errors
 
 
-def run_semantic(source: str):
+def run_semantic(source: str, show_suggestions: bool = True):
     """Tokenize → Parse → Semantic analysis. Returns (ast, has_errors)."""
-    ast, has_errors = run_parser(source)
+    ast, has_errors = run_parser(source, show_suggestions)
 
     if has_errors:
         print("\nSkipping semantic analysis due to earlier errors.")
@@ -73,7 +94,7 @@ def run_semantic(source: str):
 
     # ── semantic ──
     analyzer = SemanticAnalyzer()
-    analyzer.analyze(ast)
+    analyzer.analyze(ast, source)
 
     print("\n═══ Symbol Table ═══")
     print_symbols(analyzer.symbols)
@@ -82,6 +103,9 @@ def run_semantic(source: str):
         print(f"\n── {len(analyzer.errors)} semantic error(s) ──")
         for err in analyzer.errors:
             print(f"  {err}")
+        if show_suggestions and analyzer.suggestions:
+            print(f"\n═══ AI Suggestions ═══")
+            _print_suggestions(analyzer.suggestions)
         return ast, True
     else:
         print("\nNo semantic errors.")
@@ -89,9 +113,9 @@ def run_semantic(source: str):
     return ast, False
 
 
-def run_ir(source: str):
+def run_ir(source: str, show_suggestions: bool = True):
     """Tokenize → Parse → Semantic → IR generation. Returns (ir_code, has_errors)."""
-    ast, has_errors = run_semantic(source)
+    ast, has_errors = run_semantic(source, show_suggestions)
 
     if has_errors:
         print("\nSkipping IR generation due to earlier errors.")
@@ -106,9 +130,9 @@ def run_ir(source: str):
     return code, False
 
 
-def run_codegen(source: str) -> None:
+def run_codegen(source: str, show_suggestions: bool = True) -> None:
     """Full pipeline: Lexer → Parser → Semantic → IR → Code generation."""
-    ir_code, has_errors = run_ir(source)
+    ir_code, has_errors = run_ir(source, show_suggestions)
 
     if has_errors:
         print("\nSkipping code generation due to earlier errors.")
@@ -122,14 +146,19 @@ def run_codegen(source: str) -> None:
     print_asm(asm)
 
 
-def run_compile(source: str) -> None:
+def run_compile(source: str, show_suggestions: bool = True,
+                advisor_only: bool = False) -> None:
     """Full pipeline: produce a compiler listing with inline errors + code."""
-    print(compile_listing(source))
+    print(compile_listing(source,
+                          show_suggestions=show_suggestions,
+                          advisor_only=advisor_only))
 
 
 def main() -> None:
     if len(sys.argv) < 2:
-        print("Usage: python3 main.py <source_file> [--phase lexer|parser|semantic|ir|codegen|compile]")
+        print("Usage: python3 main.py <source_file> "
+              "[--phase lexer|parser|semantic|ir|codegen|compile] "
+              "[--no-suggestions] [--advisor-only]")
         sys.exit(1)
 
     filepath = sys.argv[1]
@@ -140,6 +169,9 @@ def main() -> None:
         if idx + 1 < len(sys.argv):
             phase = sys.argv[idx + 1]
 
+    show_suggestions = "--no-suggestions" not in sys.argv
+    advisor_only     = "--advisor-only" in sys.argv
+
     try:
         with open(filepath, "r") as f:
             source = f.read()
@@ -148,17 +180,17 @@ def main() -> None:
         sys.exit(1)
 
     if phase == "lexer":
-        run_lexer(source)
+        run_lexer(source, show_suggestions)
     elif phase == "parser":
-        run_parser(source)
+        run_parser(source, show_suggestions)
     elif phase == "semantic":
-        run_semantic(source)
+        run_semantic(source, show_suggestions)
     elif phase == "ir":
-        run_ir(source)
+        run_ir(source, show_suggestions)
     elif phase == "codegen":
-        run_codegen(source)
+        run_codegen(source, show_suggestions)
     else:
-        run_compile(source)
+        run_compile(source, show_suggestions, advisor_only)
 
 
 if __name__ == "__main__":

@@ -6,6 +6,7 @@ Errors are collected (with line numbers) and parsing continues.
 """
 
 from minilang.tokens import Token, TokenType
+from minilang.suggestions import SuggestionEngine
 from minilang.ast_nodes import (
     Program, VarDecl, ArrayType, Compound,
     Assign, IfStmt, WhileStmt, ReadStmt, WriteStmt, ProcCall,
@@ -20,6 +21,8 @@ class Parser:
         self.tokens = tokens
         self.pos    = 0
         self.errors: list[str] = []
+        self.suggestions: dict[int, list[str]] = {}
+        self._engine = SuggestionEngine()
 
     # ── token helpers ────────────────────────────────────────────
 
@@ -53,6 +56,10 @@ class Parser:
         cur = self._current()
         msg = f"[line {cur.line}] Expected {ttype.name}, got {cur.token_type.name} ({cur.value!r})"
         self.errors.append(msg)
+        # generate AI suggestions for this parse error
+        hints = self._engine.suggest_for_error(msg, cur.line)
+        if hints:
+            self.suggestions.setdefault(cur.line, []).extend(hints)
         return cur                         # return without advancing
 
     def _error(self, msg: str) -> None:
@@ -324,6 +331,12 @@ class Parser:
         # error — unexpected token in factor
         self._error(f"[line {cur.line}] Unexpected token in expression: "
                     f"{cur.token_type.name} ({cur.value!r})")
+        # generate AI suggestions
+        hints = self._engine.suggest_for_error(
+            f"Unexpected token in expression: {cur.token_type.name} ({cur.value!r})",
+            cur.line)
+        if hints:
+            self.suggestions.setdefault(cur.line, []).extend(hints)
         self._advance()                    # skip bad token
         return Num(line=cur.line, value=0)  # dummy node
 

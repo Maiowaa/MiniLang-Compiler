@@ -73,7 +73,8 @@ DSL/
 │   ├── semantic.py        # Phase 3: Semantic analyzer
 │   ├── irgen.py           # Phase 4: IR code generator
 │   ├── codegen.py         # Phase 5: Target code generator
-│   └── listing.py         # Phase 6: Listing file generator
+│   ├── listing.py         # Phase 6: Listing file generator
+│   └── suggestions.py     # AI Suggestion Engine (3-layer)
 ├── examples/
 │   ├── test1.ml           # Sample MiniLang program
 │   ├── fib.ml             # Fibonacci example
@@ -285,8 +286,73 @@ factor              → num | string | id | id [ expression ]
 **Output format:**
 1. Source lines numbered sequentially.
 2. Error messages printed with `***` directly below the source line they refer to.
-3. A summary line showing total error count.
-4. Target code (assembly) only if zero errors.
+3. AI suggestions (`💡 FIX`) printed below each error with actionable fix advice.
+4. A summary line showing total error count.
+5. Target code (assembly) only if zero errors.
+6. AI Code Advisor section (on clean compiles) with proactive code quality analysis.
+
+### 3.9 AI Suggestion Engine (`suggestions.py`)
+
+**Purpose:** Provide intelligent, actionable fix suggestions for every compiler error and proactive code quality analysis for valid programs.
+
+#### Three-Layer Architecture
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    Layer 3: ADVISOR                         │
+│  Proactive code-quality analysis on VALID programs          │
+│  (unused vars, dead code, infinite loops, style hints)      │
+├─────────────────────────────────────────────────────────────┤
+│                    Layer 2: DOCTOR                          │
+│  AST-aware concrete code-rewrite generation                 │
+│  (generates exact fix snippets, not just descriptions)      │
+├─────────────────────────────────────────────────────────────┤
+│                    Layer 1: MATCHER                         │
+│  Fuzzy name matching + structural error pattern detection   │
+│  (Levenshtein, keyword confusion, common typo patterns)     │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Layer 1 — MATCHER** (Error Augmentation):
+
+| Technique | Description |
+|-----------|-------------|
+| Levenshtein distance | "Did you mean `count`?" for typo `cont` |
+| Keyword confusion | Detects reserved words used as identifiers |
+| Pattern library | Maps 20+ error patterns → contextual suggestions |
+| Token-context analysis | For parse errors: suggests missing `;`, `end`, `:=` |
+
+**Layer 2 — DOCTOR** (Code Rewrite Generator):
+
+| Error | Generated Fix |
+|-------|---------------|
+| Undeclared `c` | `var c : integer;` |
+| Array without index `b := 3` | `b[<index>] := 3` |
+| Type mismatch `b[1] := 'hello'` | "Remove string literal, use integer" |
+| Non-array with index `a[2] := 1` | `a := 1;` (corrected line) |
+| Missing semicolon | Line with `;` appended |
+| Unterminated string | Line with closing `'` appended |
+
+**Layer 3 — ADVISOR** (Proactive Analysis on Valid Programs):
+
+| Analysis | Detection |
+|----------|----------|
+| Unused variables | Declared but never referenced in AST |
+| Write-only variables | Assigned but never read |
+| Potential infinite loops | Condition variables not modified in loop body |
+| Redundant assignments | `x := 5; x := 10` — first is overwritten |
+| Constant folding | `x := 3 + 5` could be `x := 8` |
+| Array bounds | `arr[10]` when `arr` is `array[10]` (out of bounds) |
+| Naming quality | Single-character names flagged with suggestions |
+
+**Key classes:**
+
+| Class | Responsibility |
+|-------|---------------|
+| `SuggestionEngine` | Layers 1+2: error analysis and fix generation |
+| `CodeAdvisor` | Layer 3: AST-walking proactive analysis |
+
+**Integration:** The suggestion engine is integrated into the lexer, parser, and semantic analyzer. Each module stores a `suggestions: dict[int, list[str]]` that maps line numbers to suggestion strings. The listing generator collects all suggestions and displays them inline below the corresponding error.
 
 ---
 
@@ -616,6 +682,81 @@ end.
 - All 6 errors are detected in a single pass (the compiler does not stop at the first error).
 - Target code is suppressed because errors exist.
 
+### 5.9 AI Suggestions — Semantic Error Fixes
+
+**Command:** `python3 main.py examples/test_semantic_err.ml`
+
+```
+═══ Source Listing ═══
+
+     4 | var a : integer;
+       *** [line 4] Variable 'a' already declared (first at line 3)
+       💡 FIX: Remove the duplicate declaration of 'a' on line 4 (already declared at line 3)
+     8 |   c := 5;
+       *** [line 8] Undeclared identifier 'c'
+       💡 FIX: Add declaration → var c : integer;
+     9 |   b := 3;
+       *** [line 9] Array 'b' used without index
+       💡 FIX: Add index → b[<index>] := 3
+       💡 FIX: Valid indices for 'b': 0 to 4
+    10 |   b[1] := 'hello';
+       *** [line 10] Type mismatch in assignment: 'integer' := 'string'
+       💡 FIX: Replace the string value with an integer expression
+       💡 FIX: Remove the string literal 'hello' and use an integer instead
+    11 |   a[2] := 1;
+       *** [line 11] 'a' is not an array
+       💡 FIX: Remove the index [...] — 'a' is a plain variable, not an array
+       💡 FIX: Corrected line → a := 1;
+
+── 6 error(s) found. Target code NOT generated. ──
+```
+
+### 5.10 AI Code Advisor — Proactive Analysis on Clean Programs
+
+**Command:** `python3 main.py examples/fib.ml`
+
+After a successful compilation with 0 errors, the AI Code Advisor automatically runs:
+
+```
+═══ AI Code Advisor ═══
+
+  ℹ STYLE    Single-character variable names ('a', 'b', 'i') reduce
+             readability. Consider more descriptive names:
+             'a' → accumulator, result, first_value
+             'b' → buffer, second_value, base
+             'i' → index, iterator, counter
+```
+
+### 5.11 AI Suggestions — Parse Error Fixes
+
+**Command:** `python3 main.py examples/test_parse_err.ml`
+
+```
+     3 | var a : integer
+     4 | begin
+       *** [line 4] Expected SEMICOLON, got BEGIN ('begin')
+       💡 FIX: Add a ';' after the declaration before 'begin'
+     5 |   a := ;
+       *** [line 5] Unexpected token in expression: SEMICOLON (';')
+       💡 FIX: Expected a value (number, variable, or '(' expression ')') but found SEMICOLON
+       💡 FIX: There may be a missing expression before the ';'
+```
+
+### 5.12 AI Suggestions — Lexer Error Fixes
+
+**Command:** `python3 main.py examples/test_errors.ml`
+
+```
+     4 |   x := 'unterminated string
+       *** [line 4] Unterminated string
+       💡 FIX: Add a closing ' (single quote) to terminate the string
+       💡 FIX: Fixed line →   x := 'unterminated string'
+     5 |   y := 42 @ z;
+       *** [line 5] Unexpected character: '@'
+       💡 FIX: Remove the illegal character '@'
+       💡 FIX: MiniLang uses ':=' for assignment, not '@'
+```
+
 ---
 
 ## 5.9 Testing Strategy
@@ -641,6 +782,12 @@ The compiler was tested systematically using the following approach:
    - Continue analysis after each error
    - Suppress target code when errors are present
 
+5. **AI suggestion verification** — Every error type was confirmed to produce:
+   - Actionable `💡 FIX` suggestions with concrete code rewrites
+   - Fuzzy name matching for undeclared identifiers
+   - Structural parse-error hints (missing `;`, `end`, `:=`)
+   - Proactive `AI Code Advisor` analysis on clean compiles
+
 ---
 
 ## 6. Discussion
@@ -654,13 +801,18 @@ The compiler was tested systematically using the following approach:
    - The parser records errors and continues by skipping bad tokens.
    - The semantic analyzer visits all nodes even after type mismatches.
 
-3. **Inline error listing** — Errors are grouped by line number and displayed directly below the offending source line, making it easy to locate and understand each issue.
+3. **Three-layer AI suggestion engine** — A built-in, deterministic AI engine provides intelligent help:
+   - **Layer 1 (MATCHER)** — Fuzzy name matching via Levenshtein distance, keyword confusion detection, and a 20+ pattern library for structural error suggestions.
+   - **Layer 2 (DOCTOR)** — AST-aware code-rewrite generation that produces exact fix snippets (e.g., generating `var c : integer;` for undeclared `c`, rewriting `a[2] := 1` → `a := 1;`).
+   - **Layer 3 (ADVISOR)** — Proactive code-quality analysis on valid programs: unused variables, write-only variables, infinite loop detection, redundant assignment detection, constant folding opportunities, array bounds checking, and naming quality suggestions.
 
-4. **Multi-item I/O** — `read(x, y, z)` reads multiple variables and `write('text', expr, 42)` outputs multiple items (strings and expressions) in a single statement, matching the grammar specification.
+4. **Inline error listing** — Errors are grouped by line number and displayed directly below the offending source line, with AI fix suggestions shown alongside.
 
-5. **Stack-machine code generation** — The generated assembly uses a clean, well-defined instruction set that could be executed by a simple virtual machine interpreter.
+5. **Multi-item I/O** — `read(x, y, z)` reads multiple variables and `write('text', expr, 42)` outputs multiple items (strings and expressions) in a single statement, matching the grammar specification.
 
-6. **Comprehensive type system foundation** — While MiniLang currently supports only integers, the visitor-based semantic analyzer is designed to be extended to additional types easily.
+6. **Stack-machine code generation** — The generated assembly uses a clean, well-defined instruction set that could be executed by a simple virtual machine interpreter.
+
+7. **Comprehensive type system foundation** — While MiniLang currently supports only integers, the visitor-based semantic analyzer is designed to be extended to additional types easily.
 
 ### 6.2 Limitations
 
@@ -697,7 +849,7 @@ The compiler was tested systematically using the following approach:
 
 ## 7. Conclusion
 
-This project successfully implements a complete compiler pipeline for the MiniLang programming language, covering all six required phases: Lexical Analysis, Parsing, Semantic Analysis, Intermediate Code Generation, Code Generation, and Listing File Output.
+This project successfully implements a complete compiler pipeline for the MiniLang programming language, covering all six required phases: Lexical Analysis, Parsing, Semantic Analysis, Intermediate Code Generation, Code Generation, and Listing File Output, plus a **three-layer AI suggestion engine** for intelligent error diagnosis and proactive code quality analysis.
 
 The compiler correctly:
 - Tokenizes source code with support for identifiers (case-insensitive, 32-char significant), integers, strings with escape sequences, compound operators, and comments.
@@ -705,9 +857,10 @@ The compiler correctly:
 - Performs semantic checks including symbol table construction, duplicate detection, undeclared identifier detection, and type checking.
 - Generates three-address intermediate code with temporaries and labels.
 - Translates intermediate code to stack-machine pseudo-assembly.
-- Produces a listing file with numbered source lines, inline error messages, and conditional target code output.
+- Produces a listing file with numbered source lines, inline error messages, AI fix suggestions, and conditional target code output.
+- Runs proactive AI analysis on valid programs to detect unused variables, potential infinite loops, redundant assignments, and naming quality issues.
 
-The modular architecture ensures that each phase can be tested independently and extended in the future. The error recovery mechanism across all phases allows the compiler to report multiple errors in a single compilation, significantly improving the developer experience.
+The modular architecture ensures that each phase can be tested independently and extended in the future. The error recovery mechanism across all phases allows the compiler to report multiple errors in a single compilation, while the AI suggestion engine significantly improves the developer experience by providing actionable fix hints for every error.
 
 **How to run:**
 
@@ -715,6 +868,8 @@ The modular architecture ensures that each phase can be tested independently and
 cd ~/DSL
 python3 main.py <source_file.ml>                     # full compile (default)
 python3 main.py <source_file.ml> --phase <phase>      # individual phase
+python3 main.py <source_file.ml> --no-suggestions     # suppress AI suggestions
+python3 main.py <source_file.ml> --advisor-only       # AI advisor only
 ```
 
 Where `<phase>` is one of: `lexer`, `parser`, `semantic`, `ir`, `codegen`, `compile`.
