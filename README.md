@@ -58,7 +58,3 @@ minilang/
 └── listing.py     # Listing file generator
 ```
 
-## Course Info
-
-Compiler Design — Semester VI  
-Student: Kushagar Sood (235805198)
